@@ -7,7 +7,7 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
     """
     Generates a functional static app based on the brief.
     Handles templates: captcha, CSV sum, markdown, GitHub lookup.
-    Falls back to LLM or minimal template.
+    Falls back to LLM if needed.
     """
     os.makedirs(output_folder, exist_ok=True)
     brief_lower = brief.lower()
