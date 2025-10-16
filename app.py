@@ -80,13 +80,9 @@ async def process_task(data):
         repo_name, commit_sha, pages_url = create_or_update_repo(task_id, repo_folder, round_num)
         print("✅ GitHub push complete:", repo_name, commit_sha, pages_url)
 
-        # 📡 Notify evaluation API
+        # 📡 Notify evaluation API if URL provided
         if evaluation_url:
             await notify_evaluation_api(email, task_id, round_num, nonce, repo_name, commit_sha, pages_url, evaluation_url)
-
-        # 🧩 Auto-trigger Round 2 task if Round 1 completed successfully
-        if round_num == 1 and evaluation_url:
-            await generate_round2_task(email, task_id, evaluation_url, brief)
 
     except Exception as e:
         print("❌ Task processing error:", e)
@@ -117,35 +113,6 @@ async def notify_evaluation_api(email, task_id, round_num, nonce, repo_name, com
             print(f"✅ Evaluation API notified successfully for round {round_num}")
     except Exception as e:
         print("❌ Error notifying evaluation API:", e)
-        traceback.print_exc()
-
-
-async def generate_round2_task(email, task_id, evaluation_url, previous_brief):
-    """
-    Automatically triggers the instructor for round 2 task generation.
-    """
-    nonce = str(uuid4())
-    payload = {
-        "email": email,
-        "secret": STUDENT_SECRET,
-        "task": task_id,
-        "round": 2,
-        "nonce": nonce,
-        "brief": f"Round 2 update for previous brief:\n{previous_brief}",
-        "checks": [],
-        "evaluation_url": evaluation_url,
-        "attachments": []
-    }
-
-    try:
-        print("📡 Triggering round 2 task ...")
-        r = await asyncio.to_thread(lambda: requests.post(evaluation_url, json=payload))
-        if r.status_code != 200:
-            print("⚠️ Failed to notify round 2 evaluation API:", r.status_code, r.text)
-        else:
-            print("✅ Round 2 task notification sent successfully!")
-    except Exception as e:
-        print("❌ Error in round 2 task trigger:", e)
         traceback.print_exc()
 
 
