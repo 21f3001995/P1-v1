@@ -1,9 +1,7 @@
-# github_utils.py
 import requests
 import subprocess
 from pathlib import Path
 from config import GITHUB_USERNAME, GITHUB_TOKEN
-
 
 def create_and_push_repo(repo_name: str, local_path: Path):
     """
@@ -18,17 +16,21 @@ def create_and_push_repo(repo_name: str, local_path: Path):
     # 1️⃣ Create repo
     payload = {"name": repo_name, "private": False, "auto_init": False}
     r = requests.post("https://api.github.com/user/repos", json=payload, headers=headers)
-
     if r.status_code not in [200, 201]:
-        # If repo already exists, that’s fine; reuse it
         if "already exists" not in r.text:
             raise Exception(f"GitHub repo creation failed: {r.status_code} {r.text}")
 
     # 2️⃣ Local Git setup and push
     subprocess.run(["git", "init"], cwd=local_path, check=True)
     subprocess.run(["git", "branch", "-M", "main"], cwd=local_path, check=True)
+
+    # ⚡ Set Git identity for Render
+    subprocess.run(["git", "config", "user.name", "21f3001995"], cwd=local_path, check=True)
+    subprocess.run(["git", "config", "user.email", "21f3001995@ds.study.iitm.ac.in"], cwd=local_path, check=True)
+
     subprocess.run(["git", "add", "."], cwd=local_path, check=True)
     subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=local_path, check=True)
+
     remote_url = f"https://{GITHUB_USERNAME}:{GITHUB_TOKEN}@github.com/{GITHUB_USERNAME}/{repo_name}.git"
     subprocess.run(["git", "remote", "add", "origin", remote_url], cwd=local_path, check=True)
     subprocess.run(["git", "push", "-u", "origin", "main"], cwd=local_path, check=True)
