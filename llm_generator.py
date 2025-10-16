@@ -1,26 +1,21 @@
 # llm_generator.py
-
 import os
-import json
 import csv
-import base64
-from pathlib import Path
+from llm_client import generate_code_from_brief
 
 def generate_app_from_brief(brief, attachments_dir, output_folder):
     """
     Generates a functional static app based on the brief.
-    Handles common templates: captcha, CSV sum, markdown, GitHub lookup.
+    Handles templates: captcha, CSV sum, markdown, GitHub lookup.
+    Falls back to LLM or minimal template.
     """
     os.makedirs(output_folder, exist_ok=True)
-
-    # Detect task type from brief
     brief_lower = brief.lower()
     html_content = ""
-    js_content = ""
 
     # --- Captcha Solver ---
     if "captcha" in brief_lower:
-        html_content = """
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head><title>Captcha Solver</title></head>
@@ -32,7 +27,6 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
                 const params = new URLSearchParams(window.location.search);
                 const url = params.get('url') || 'sample.png';
                 document.getElementById('captcha-img').src = url;
-                // Demo solver (echo image name)
                 document.getElementById('captcha-text').textContent = "Solved: " + url.split('/').pop();
             </script>
         </body>
@@ -40,28 +34,27 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
         """
 
     # --- CSV Sum ---
-    elif "sum-of-sales" in brief_lower or any(f.endswith(".csv") for f in os.listdir(attachments_dir)):
-        # Find CSV
+    elif any(f.endswith(".csv") for f in os.listdir(attachments_dir)):
         csv_file = next((f for f in os.listdir(attachments_dir) if f.endswith(".csv")), None)
+        total = 0
         if csv_file:
-            total = 0
             with open(os.path.join(attachments_dir, csv_file), newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     total += float(row.get("sales", 0))
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head><title>Sales Summary</title></head>
-            <body>
-                <h2>Sales Summary</h2>
-                <div id="total-sales">{total}</div>
-            </body>
-            </html>
-            """
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Sales Summary</title></head>
+        <body>
+            <h2>Sales Summary</h2>
+            <div id="total-sales">{total}</div>
+        </body>
+        </html>
+        """
 
-    # --- Markdown to HTML ---
-    elif "markdown" in brief_lower or any(f.endswith(".md") for f in os.listdir(attachments_dir)):
+    # --- Markdown ---
+    elif any(f.endswith(".md") for f in os.listdir(attachments_dir)):
         md_file = next((f for f in os.listdir(attachments_dir) if f.endswith(".md")), None)
         md_text = ""
         if md_file:
@@ -87,7 +80,7 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
         </html>
         """
 
-    # --- GitHub User Info ---
+    # --- GitHub User Lookup ---
     elif "github" in brief_lower:
         html_content = """
         <!DOCTYPE html>
@@ -112,20 +105,12 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
         </html>
         """
 
+    # --- Fallback to LLM ---
     else:
-        # Default: just display brief
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Generated App</title></head>
-        <body>
-            <h1>Task Brief</h1>
-            <p>{brief}</p>
-        </body>
-        </html>
-        """
+        print("Using LLM to generate HTML for:", brief)
+        html_content = generate_code_from_brief(brief)
 
-    # Write HTML
+    # Write HTML file
     with open(os.path.join(output_folder, "index.html"), "w", encoding="utf-8") as f:
         f.write(html_content)
 
@@ -136,10 +121,8 @@ def generate_app_from_brief(brief, attachments_dir, output_folder):
         if os.path.isfile(src):
             os.rename(src, dst)
 
-    # MIT License
+    # Always add LICENSE + README
     with open(os.path.join(output_folder, "LICENSE"), "w") as f:
         f.write("MIT License")
-
-    # README.md
     with open(os.path.join(output_folder, "README.md"), "w") as f:
         f.write(f"# Generated App\n\nBrief: {brief}\n\nLicense: MIT")

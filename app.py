@@ -1,16 +1,19 @@
 # app.py
 from fastapi import FastAPI, Request, HTTPException
-from config import STUDENT_SECRET, BASE_REPO_DIR
-from github_utils import create_and_push_repo
-from uuid import uuid4
+from config import STUDENT_SECRET, BASE_REPO_DIR, GITHUB_USERNAME, GITHUB_TOKEN
 from pathlib import Path
+from uuid import uuid4
 import asyncio
 import shutil
 import json
+import base64
+import subprocess
 import requests
 
-app = FastAPI()
+from github_utils import create_and_push_repo
+from llm_generator import generate_app_from_brief
 
+app = FastAPI()
 
 @app.post("/api-endpoint")
 async def api_endpoint(request: Request):
@@ -20,7 +23,7 @@ async def api_endpoint(request: Request):
     if data.get("secret") != STUDENT_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret")
 
-    # Return 200 OK immediately
+    # Process the task asynchronously
     asyncio.create_task(process_task(data))
     return {"status": "ok"}
 
@@ -35,15 +38,26 @@ async def process_task(data):
         evaluation_url = data.get("evaluation_url")
         attachments = data.get("attachments", [])
 
-        # Create temp folder
+        # Create unique repo folder
         repo_folder = BASE_REPO_DIR / f"{task_id}_{nonce}_app"
         if repo_folder.exists():
             shutil.rmtree(repo_folder)
         repo_folder.mkdir(parents=True)
 
-        # Create minimal files
-        index_file = repo_folder / "index.html"
-        index_file.write_text(f"<html><body><h1>{brief}</h1></body></html>")
+        attachments_dir = repo_folder / "attachments"
+        attachments_dir.mkdir(exist_ok=True)
+
+        # Save attachments
+        for att in attachments:
+            if "name" in att and "url" in att:
+                name, url = att["name"], att["url"]
+                if url.startswith("data:"):
+                    _, b64data = url.split(",", 1)
+                    with open(attachments_dir / name, "wb") as f:
+                        f.write(base64.b64decode(b64data))
+
+        # Generate app files (HTML/JS)
+        generate_app_from_brief(brief, attachments_dir, repo_folder)
 
         # LICENSE
         (repo_folder / "LICENSE").write_text("MIT License")
@@ -51,7 +65,7 @@ async def process_task(data):
         # README
         (repo_folder / "README.md").write_text(f"# {task_id}\n\n{brief}\n\nMIT License.")
 
-        # GitHub: create repo, push
+        # GitHub: create repo & push
         repo_name, commit_sha, pages_url = create_and_push_repo(task_id, repo_folder)
 
         print("GH output:", repo_name, commit_sha, pages_url)
@@ -59,7 +73,7 @@ async def process_task(data):
         # Notify evaluation API
         await notify_evaluation_api(email, task_id, round_num, nonce, repo_name, commit_sha, pages_url, evaluation_url)
 
-        # Optionally, simulate round 2 task generation (instructors would normally do this)
+        # Auto-generate round 2 task if round 1
         if round_num == 1 and evaluation_url:
             await generate_round2_task(email, task_id, evaluation_url)
 
@@ -73,7 +87,7 @@ async def notify_evaluation_api(email, task_id, round_num, nonce, repo_name, com
         "task": task_id,
         "round": round_num,
         "nonce": nonce,
-        "repo_url": f"https://github.com/{repo_name}",
+        "repo_url": f"https://github.com/{GITHUB_USERNAME}/{repo_name}",
         "commit_sha": commit_sha,
         "pages_url": pages_url
     }
@@ -88,7 +102,6 @@ async def notify_evaluation_api(email, task_id, round_num, nonce, repo_name, com
 
 
 async def generate_round2_task(email, task_id, evaluation_url):
-    from uuid import uuid4
     nonce = str(uuid4())
     payload = {
         "email": email,
@@ -109,3 +122,11 @@ async def generate_round2_task(email, task_id, evaluation_url):
             print("Round 2 task notification sent successfully!")
     except Exception as e:
         print("Error in round 2 task:", e)
+
+
+@app.post("/eval-mock")
+async def eval_mock(request: Request):
+    data = await request.json()
+    print("✅ Eval mock received:", json.dumps(data, indent=2))
+    return {"status": "received"}
+
